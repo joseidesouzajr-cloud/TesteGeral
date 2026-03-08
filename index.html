@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simulador Saúde Coletiva</title>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
     <style>
         * {
             margin: 0;
@@ -841,6 +844,26 @@
     </div>
 
     <script>
+        // ===== CONFIGURACAO FIREBASE =====
+        const firebaseConfig = {
+            apiKey: "AIzaSyDX3Zc3SxXEEdI5pN2aL_xmkYQdhgJ52UE",
+            authDomain: "simulador-saude-coletiva-81845.firebaseapp.com",
+            databaseURL: "https://simulador-saude-coletiva-81845-default-rtdb.firebaseio.com",
+            projectId: "simulador-saude-coletiva-81845",
+            storageBucket: "simulador-saude-coletiva-81845.firebasestorage.app",
+            messagingSenderId: "425628614923",
+            appId: "1:425628614923:web:acfcb6f9c0639344f7620e",
+            measurementId: "G-9FT8PWET0H"
+        };
+        
+        let db = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+        } catch (e) {
+            console.log('Firebase nao disponivel');
+        }
+        
         // Mensagens de incentivo
         const mensagensAcerto = [
             "🎉 Excelente! Você acertou!",
@@ -903,10 +926,10 @@
                 tipo: "incorreta",
                 texto: "Qual alternativa está INCORRETA sobre os princípios do SUS?",
                 opcoes: [
-                    { texto: "Universalidade garante acesso para todos", correta: true },
-                    { texto: "Equidade significa tratar desigualmente os desiguais", correta: true },
-                    { texto: "Integralidade é atendimento apenas hospitalar", correta: false },
-                    { texto: "Descentralização distribui responsabilidades", correta: true }
+                    { texto: "Universalidade garante acesso para todos", correta: false },
+                    { texto: "Equidade significa tratar desigualmente os desiguais", correta: false },
+                    { texto: "Integralidade é atendimento apenas hospitalar", correta: true },
+                    { texto: "Descentralização distribui responsabilidades", correta: false }
                 ],
                 explicacao: "Integralidade significa cuidado completo, não apenas hospitalar."
             },
@@ -953,10 +976,10 @@
                 tipo: "incorreta",
                 texto: "Qual alternativa está INCORRETA sobre doenças transmissíveis?",
                 opcoes: [
-                    { texto: "São causadas por agentes infecciosos", correta: true },
-                    { texto: "Podem ser transmitidas entre pessoas", correta: true },
-                    { texto: "Nunca podem ser prevenidas", correta: false },
-                    { texto: "Têm agente etiológico específico", correta: true }
+                    { texto: "São causadas por agentes infecciosos", correta: false },
+                    { texto: "Podem ser transmitidas entre pessoas", correta: false },
+                    { texto: "Nunca podem ser prevenidas", correta: true },
+                    { texto: "Têm agente etiológico específico", correta: false }
                 ],
                 explicacao: "Doenças transmissíveis podem ser prevenidas através de vacinação e medidas de higiene."
             },
@@ -1003,10 +1026,10 @@
                 tipo: "incorreta",
                 texto: "Qual alternativa está INCORRETA sobre a rubéola?",
                 opcoes: [
-                    { texto: "É uma doença viral", correta: true },
-                    { texto: "É exantemática (com erupção cutânea)", correta: true },
-                    { texto: "É incurável", correta: false },
-                    { texto: "É contagiosa", correta: true }
+                    { texto: "É uma doença viral", correta: false },
+                    { texto: "É exantemática (com erupção cutânea)", correta: false },
+                    { texto: "É incurável", correta: true },
+                    { texto: "É contagiosa", correta: false }
                 ],
                 explicacao: "Rubéola é curável e pode ser prevenida por vacinação."
             },
@@ -1091,9 +1114,59 @@
         }
 
         // Inicializar ranking
-        function initializeRanking() {
+        async function initializeRanking() {
+            if (db) {
+                const rankingOnline = await carregarRankingOnline();
+                if (rankingOnline && rankingOnline.length > 0) {
+                    updateRankingDisplay(rankingOnline);
+                    return;
+                }
+            }
             const ranking = JSON.parse(localStorage.getItem('simuladorRanking')) || [];
             updateRankingDisplay(ranking);
+        }
+        
+        // Carregar ranking do Firebase
+        async function carregarRankingOnline() {
+            if (!db) return null;
+            try {
+                const ref = db.ref('ranking');
+                return new Promise((resolve) => {
+                    ref.once('value', (snapshot) => {
+                        const dados = snapshot.val();
+                        if (!dados) {
+                            resolve([]);
+                            return;
+                        }
+                        const ranking = Object.values(dados).sort((a, b) => b.score - a.score);
+                        resolve(ranking);
+                    });
+                });
+            } catch (e) {
+                console.log('Erro ao carregar ranking:', e);
+                return null;
+            }
+        }
+        
+        // Salvar pontuacao no Firebase
+        async function salvarPontuacaoOnline(nome, pontuacao) {
+            if (!db) return;
+            try {
+                const chaveNome = nome.replace(/[^a-zA-Z0-9]/g, '_');
+                const ref = db.ref('ranking/' + chaveNome);
+                ref.once('value', (snapshot) => {
+                    const dadosAtuais = snapshot.val();
+                    if (!dadosAtuais || pontuacao > dadosAtuais.score) {
+                        ref.set({
+                            name: nome,
+                            score: pontuacao,
+                            date: new Date().toLocaleString('pt-BR')
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log('Erro ao salvar pontuacao:', e);
+            }
         }
 
         // Atualizar exibição do ranking
@@ -1109,13 +1182,50 @@
                 const medals = ['🥇', '🥈', '🥉'];
                 const medal = medals[index] || `${index + 1}º`;
                 return `
-                    <div class="ranking-item">
+                    <div class="ranking-item" style="cursor: pointer;" onclick="mostrarPopupMelhorarPontuacao('${item.name}')">
                         <span class="ranking-medal">${medal}</span>
-                        <span class="ranking-name">${item.name}</span>
+                        <span class="ranking-name" style="text-decoration: underline;">${item.name}</span>
                         <span class="ranking-score">${item.score}%</span>
                     </div>
                 `;
             }).join('');
+        }
+        
+        // Mostrar pop-up para melhorar pontuação
+        function mostrarPopupMelhorarPontuacao(nome) {
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.id = 'melhorarPontuacaoModal';
+            modal.innerHTML = `
+                <div class="modal-content" style="text-align: center;">
+                    <h2 style="color: #667eea; font-size: 24px; margin-bottom: 20px;">🎯 Olá, ${nome}!</h2>
+                    <p style="font-size: 18px; color: #666; margin-bottom: 30px;">Você deseja melhorar a pontuação? Clique aqui 👇</p>
+                    <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="iniciarComNome('${nome}')" style="padding: 15px 40px; border-radius: 10px; font-size: 16px; border: none; cursor: pointer;">🚀 Começar Simulado</button>
+                        <button class="btn-secondary" onclick="fecharPopupMelhorar()" style="padding: 15px 40px; border-radius: 10px; font-size: 16px; border: 2px solid #667eea; background: white; color: #667eea; cursor: pointer;">❌ Cancelar</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Iniciar simulado com nome pré-preenchido
+        function iniciarComNome(nome) {
+            const modal = document.getElementById('melhorarPontuacaoModal');
+            if (modal) modal.remove();
+            
+            // Preencher o campo de nome
+            document.getElementById('nameInput').value = nome;
+            
+            // Iniciar o quiz
+            startQuiz();
+        }
+        
+        // Fechar pop-up de melhorar
+        function fecharPopupMelhorar() {
+            const modal = document.getElementById('melhorarPontuacaoModal');
+            if (modal) modal.remove();
         }
 
         // Iniciar quiz
@@ -1200,6 +1310,14 @@
                     } else if (optionText === selectedOption.texto && !isCorrect) {
                         opt.classList.add('incorrect');
                     }
+                } else if (question.tipo === 'incorreta') {
+                    // Para questões de assinale a incorreta, a opção correta é a que tem correta: false
+                    const correctOption = question.opcoes.find(o => o.texto === optionText && !o.correta);
+                    if (correctOption) {
+                        opt.classList.add('correct');
+                    } else if (optionText === selectedOption.texto && isCorrect) {
+                        opt.classList.add('incorrect');
+                    }
                 } else {
                     const correctOption = question.opcoes.find(o => o.texto === optionText && o.correta);
                     if (correctOption) {
@@ -1242,14 +1360,50 @@
 
         // Finalizar fase
         function finishPhase() {
+            // Mostrar modal de fim de fase
+            showPhaseModal();
+        }
+        
+        // Mostrar modal de fim de fase
+        function showPhaseModal() {
+            const phaseScore = Math.round((score / (currentPhase * 20)) * 100);
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.id = 'phaseModal';
+            modal.innerHTML = `
+                <div class="modal-content" style="text-align: center;">
+                    <h2 style="color: #667eea; font-size: 28px; margin-bottom: 20px;">🎉 Fase ${currentPhase} Concluída!</h2>
+                    <div style="font-size: 56px; font-weight: bold; color: #667eea; margin: 30px 0;">${phaseScore}%</div>
+                    <p style="font-size: 18px; color: #666; margin-bottom: 30px;">Você acertou <strong>${score} de ${currentPhase * 20}</strong> questões</p>
+                    <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                        ${currentPhase < 6 ? `<button class="btn-primary" onclick="proximaFase()" style="padding: 15px 40px; border-radius: 10px; font-size: 16px; border: none; cursor: pointer;">➡️ Próxima Fase</button>` : ''}
+                        <button class="btn-secondary" onclick="finalizarSimulado()" style="padding: 15px 40px; border-radius: 10px; font-size: 16px; border: 2px solid #667eea; background: white; color: #667eea; cursor: pointer;">✅ Finalizar</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Próxima fase
+        function proximaFase() {
+            const modal = document.getElementById('phaseModal');
+            if (modal) modal.remove();
+            
             if (currentPhase < 6) {
                 currentPhase++;
-                currentQuestion = 0;
-                updateSpeechBubble(`Parabéns! Você passou para a Fase ${currentPhase}! 🎉`);
-                setTimeout(() => showQuestion(), 2000);
-            } else {
-                showFinalResult();
+                currentQuestion = currentPhase * 20;
+                updateSpeechBubble(`Vamos para a Fase ${currentPhase}! Você consegue! 💪`);
+                setTimeout(() => showQuestion(), 1500);
             }
+        }
+        
+        // Finalizar simulado
+        function finalizarSimulado() {
+            const modal = document.getElementById('phaseModal');
+            if (modal) modal.remove();
+            showFinalResult();
         }
 
         // Mostrar resultado final
@@ -1284,14 +1438,31 @@
             `;
             document.getElementById('resultDetails').innerHTML = details;
 
-            // Salvar no ranking
+            // Salvar no ranking com melhor nota
             const ranking = JSON.parse(localStorage.getItem('simuladorRanking')) || [];
-            ranking.push({
-                name: userName,
-                score: finalScore,
-                date: new Date().toLocaleString('pt-BR')
-            });
+            
+            const usuarioExistente = ranking.findIndex(r => r.name === userName);
+            if (usuarioExistente !== -1) {
+                if (finalScore > ranking[usuarioExistente].score) {
+                    ranking[usuarioExistente].score = finalScore;
+                    ranking[usuarioExistente].date = new Date().toLocaleString('pt-BR');
+                }
+            } else {
+                ranking.push({
+                    name: userName,
+                    score: finalScore,
+                    date: new Date().toLocaleString('pt-BR')
+                });
+            }
+            
+            ranking.sort((a, b) => b.score - a.score);
             localStorage.setItem('simuladorRanking', JSON.stringify(ranking));
+            
+            // Salvar no Firebase tambem
+            salvarPontuacaoOnline(userName, finalScore);
+            
+            // Atualizar ranking na tela
+            initializeRanking();
         }
 
         // Mostrar modal de revisão
@@ -1348,6 +1519,12 @@ Como abrir:
         // Voltar ao início
         function goHome() {
             location.reload();
+        }
+        
+        // Fechar modal de fase
+        function closePhaseModal() {
+            const modal = document.getElementById('phaseModal');
+            if (modal) modal.remove();
         }
 
         // Inicializar ao carregar
